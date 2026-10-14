@@ -30,3 +30,7 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Personal notes, kept on this computer only
+CLAUDE.md
+PROGRESS.md

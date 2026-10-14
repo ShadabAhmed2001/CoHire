@@ -9,6 +9,10 @@ CoHire is a monorepo with two independent npm packages (no root `package.json`; 
 - `frontend/` — Vite + React 19 (JavaScript, ESM). Linted with oxlint.
 - `backend/` — Node.js (ESM: use `import`/`export`, include `.js` extensions in local imports) with Express 5 + Mongoose (MongoDB). Auth-related deps (bcryptjs, jsonwebtoken, cookie-parser) are installed. Entry point is `backend/index.js` (middleware setup, `/api/health`, connects to MongoDB via `MONGO_URI` before listening). Copy `backend/.env.example` to `.env` to configure.
 
+## Progress
+
+This is a hand rebuild of CoHire by the owner, for learning. Read `backend/PROGRESS.md` first: it has the teaching approach, the 12-step plan, what is done and what comes next. Update it at the end of each session.
+
 ## Commands
 
 Frontend (run from `frontend/`):

@@ -2,12 +2,16 @@ import "dotenv/config"
 import express from "express"
 import mongoose from "mongoose"
 import bcrypt from "bcryptjs"
+import jwt from "jsonwebtoken"
+import cookieParser from "cookie-parser"
 
 let app = express()
 
 // Parses the JSON request body into req.body; without it req.body is undefined.
 app.use(express.json())
 
+// Reads the cookies into req.cookies; without it req.cookies is undefined.
+app.use(cookieParser())
 
 app.get("/api/health", (req, res) => {
   res.send("server started")
@@ -35,6 +39,25 @@ let testUserSchema = new mongoose.Schema({
 
 let User = mongoose.model("User", testUserSchema)
 
+let requireAuth = (req, res, next) => {
+  let token = req.cookies.token
+
+  if (!token) {
+    res.status(401).send({ message: "Not logged in" })
+    return false
+  }
+
+  try {
+    let payload = jwt.verify(token, process.env.JWT_SECRET)
+    req.userID = payload.userID
+    next()
+
+  } catch (error) {
+    res.status(401).send({ message: "Invalid or exprired token" })
+
+  }
+}
+
 
 app.post("/api/user", async (req, res) => {
   let { name, email, password } = req.body
@@ -51,7 +74,7 @@ app.post("/api/user", async (req, res) => {
   })
 })
 
-app.get("/api/users", async (req, res) => {
+app.get("/api/users", requireAuth, async (req, res) => {
   res.send(await User.find())
 })
 
@@ -72,6 +95,19 @@ app.post("/api/login", async (req, res) => {
     res.status(401).send({ message: "Invalid email or password" })
     return false
   }
+
+  let token = jwt.sign({ userID: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" })
+
+  // res.cookie(token_name,value,options)
+  res.cookie(
+    "token",
+    token,
+    {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000 //milliseconds
+    }
+  )
 
   res.status(200).send({ message: "user logged in" })
 })

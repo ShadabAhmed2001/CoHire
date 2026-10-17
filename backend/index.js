@@ -4,6 +4,23 @@ import mongoose from "mongoose"
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 import cookieParser from "cookie-parser"
+import { z } from "zod"
+
+
+// extending the inbuilt js Error class to customise error handling
+class ClsHttpError extends Error {
+  constructor(status, message) {
+    super(message)
+    // The built-in Error has no status, so we add one for the middleware to use as the HTTP status code inside this custom class extending Error.
+    this.status = status
+  }
+}
+
+// let testErr = new ClsHttpError(400, "test error thrown")
+// console.log(testErr)
+// console.log(testErr.status)
+// console.log(testErr.message)
+
 
 let app = express()
 
@@ -39,28 +56,52 @@ let testUserSchema = new mongoose.Schema({
 
 let User = mongoose.model("User", testUserSchema)
 
+
+let registerSchema = z.object({
+  name: z.string("Name is required").min(1),
+  email: z.email(),
+  password: z.string().min(6, "Password must be at least 6 characters")
+})
+
+
+
 let requireAuth = (req, res, next) => {
   let token = req.cookies.token
-
   if (!token) {
-    res.status(401).send({ message: "Not logged in" })
-    return false
+    // res.status(401).send({ message: "Not logged in" })
+    // return false
+    throw new ClsHttpError(401, "Not logged in")
   }
 
   try {
     let payload = jwt.verify(token, process.env.JWT_SECRET)
     req.userID = payload.userID
-    next()
+    // next() // ! moved to bottom
 
   } catch (error) {
-    res.status(401).send({ message: "Invalid or exprired token" })
-
+    // res.status(401).send({ message: "Invalid or exprired token" })
+    throw new ClsHttpError(401, "Invalid or exprired token")
   }
+
+  // Outside the try on purpose: if next() were inside, an error from the route after it would be caught above and wrongly reported as an invalid token.
+  next()
 }
 
-
+// ^ add user
 app.post("/api/user", async (req, res) => {
-  let { name, email, password } = req.body
+
+  let validate = registerSchema.safeParse(req.body)
+
+
+  if (!validate.success) {
+    // res.status(400).send({ message: "Invalid input" })
+    // return false
+
+    console.log(validate.error.issues)
+    throw new ClsHttpError(400, "Invalid input!")
+  }
+
+  let { name, email, password } = validate.data
   let hashedPassowrd = await bcrypt.hash(password, 10)
   let addedUser = await User.create({
     name,
@@ -74,26 +115,31 @@ app.post("/api/user", async (req, res) => {
   })
 })
 
+
+// ^ get all users
 app.get("/api/users", requireAuth, async (req, res) => {
   res.send(await User.find())
 })
 
 
+// ^ login
 app.post("/api/login", async (req, res) => {
   let { email, password } = req.body
   let user = await User.findOne({ email }).select("+passwordHash")
 
   // if no user found with email
   if (!user) {
-    res.status(401).send({ message: "Invalid email or password" })
-    return false
+    // res.status(401).send({ message: "Invalid email or password" })
+    // return false
+    throw new ClsHttpError(401, "Invalid email or password")
   }
 
   // if user found but password doesnt match
   let passwordMatch = await bcrypt.compare(password, user.passwordHash)
   if (!passwordMatch) {
-    res.status(401).send({ message: "Invalid email or password" })
-    return false
+    // res.status(401).send({ message: "Invalid email or password" })
+    // return false
+    throw new ClsHttpError(401, "Invalid email or password")
   }
 
   let token = jwt.sign({ userID: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" })
@@ -113,6 +159,26 @@ app.post("/api/login", async (req, res) => {
 })
 
 
+// ! error handling middleware.
+// instead of using try catch block in every route, one middlewear to handle all errors.
+app.use((error, req, res, next) => {
+
+  if (error instanceof ClsHttpError) {
+    res.status(error.status).send({ message: error.message })
+    return false
+  }
+
+  if (error.code == 11000) {
+    res.status(409).send({ message: "Email already exists" })
+    return false
+  }
+
+  res.status(500).send({ message: "Something went wrong" })
+})
+
+
+
+// * mongodb connect and server starting point
 try {
   await mongoose.connect(process.env.MONGO_URI)
   console.log("mongo db connected")

@@ -58,9 +58,9 @@ let User = mongoose.model("User", testUserSchema)
 
 
 let registerSchema = z.object({
-  name: z.string("Name is required").min(1),
-  email: z.email(),
-  password: z.string().min(6, "Password must be at least 6 characters")
+  name: z.string("Name is required").min(1, "Name is required"),
+  email: z.email("Enter a valid email"),
+  password: z.string("Password is required").min(6, "Password must be at least 6 characters")
 })
 
 
@@ -87,8 +87,8 @@ let requireAuth = (req, res, next) => {
   next()
 }
 
-// ^ add user
-app.post("/api/user", async (req, res) => {
+// ^ register user
+app.post("/api/register", async (req, res) => {
 
   let validate = registerSchema.safeParse(req.body)
 
@@ -97,8 +97,9 @@ app.post("/api/user", async (req, res) => {
     // res.status(400).send({ message: "Invalid input" })
     // return false
 
-    console.log(validate.error.issues)
-    throw new ClsHttpError(400, "Invalid input!")
+    // console.log(validate.error.issues)
+    // throw new ClsHttpError(400, "Invalid input!")
+    throw new ClsHttpError(400, validate.error.issues[0].message)
   }
 
   let { name, email, password } = validate.data
@@ -159,9 +160,40 @@ app.post("/api/login", async (req, res) => {
 })
 
 
+// ^ logout
+app.post("/api/logout", (req, res) => {
+
+  res.clearCookie(
+    "token",
+    {
+      httpOnly: true,
+      sameSite: "lax"
+    }
+  )
+
+  res.status(200).send({ message: "User logged out" })
+
+})
+
+
+// ^ who's logged in
+app.get("/api/me", requireAuth, async (req, res) => {
+  let user = await User.findById(req.userID)
+  if (!user) {
+    throw new ClsHttpError(401, "User not found")
+  }
+
+  res.send({
+    _id: user._id,
+    name: user.name,
+    email: user.email
+  })
+})
+
 // ! error handling middleware.
 // instead of using try catch block in every route, one middlewear to handle all errors.
 app.use((error, req, res, next) => {
+  console.log(error)
 
   if (error instanceof ClsHttpError) {
     res.status(error.status).send({ message: error.message })

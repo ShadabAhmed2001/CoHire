@@ -5,21 +5,11 @@ import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 import cookieParser from "cookie-parser"
 import { z } from "zod"
+import ClsHttpError from "./handlers/ClsHttpError.js";
+import User from "./models/User.js";
+import requireAuth from "./middlewares/requireAuth.js";
+import errorHandler from "./middlewares/errorHandler.js";
 
-
-// extending the inbuilt js Error class to customise error handling
-class ClsHttpError extends Error {
-  constructor(status, message) {
-    super(message)
-    // The built-in Error has no status, so we add one for the middleware to use as the HTTP status code inside this custom class extending Error.
-    this.status = status
-  }
-}
-
-// let testErr = new ClsHttpError(400, "test error thrown")
-// console.log(testErr)
-// console.log(testErr.status)
-// console.log(testErr.message)
 
 
 let app = express()
@@ -35,27 +25,6 @@ app.get("/api/health", (req, res) => {
 })
 
 
-let testUserSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true
-  },
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    lowercase: true,
-    trim: true
-  },
-  passwordHash: {
-    type: String,
-    required: true,
-    select: false
-  }
-})
-
-let User = mongoose.model("User", testUserSchema)
-
 
 let registerSchema = z.object({
   name: z.string("Name is required").min(1, "Name is required"),
@@ -65,33 +34,12 @@ let registerSchema = z.object({
 
 
 
-let requireAuth = (req, res, next) => {
-  let token = req.cookies.token
-  if (!token) {
-    // res.status(401).send({ message: "Not logged in" })
-    // return false
-    throw new ClsHttpError(401, "Not logged in")
-  }
 
-  try {
-    let payload = jwt.verify(token, process.env.JWT_SECRET)
-    req.userID = payload.userID
-    // next() // ! moved to bottom
-
-  } catch (error) {
-    // res.status(401).send({ message: "Invalid or exprired token" })
-    throw new ClsHttpError(401, "Invalid or exprired token")
-  }
-
-  // Outside the try on purpose: if next() were inside, an error from the route after it would be caught above and wrongly reported as an invalid token.
-  next()
-}
 
 // ^ register user
 app.post("/api/register", async (req, res) => {
 
   let validate = registerSchema.safeParse(req.body)
-
 
   if (!validate.success) {
     // res.status(400).send({ message: "Invalid input" })
@@ -192,22 +140,7 @@ app.get("/api/me", requireAuth, async (req, res) => {
 
 // ! error handling middleware.
 // instead of using try catch block in every route, one middlewear to handle all errors.
-app.use((error, req, res, next) => {
-  console.log(error)
-
-  if (error instanceof ClsHttpError) {
-    res.status(error.status).send({ message: error.message })
-    return false
-  }
-
-  if (error.code == 11000) {
-    res.status(409).send({ message: "Email already exists" })
-    return false
-  }
-
-  res.status(500).send({ message: "Something went wrong" })
-})
-
+app.use(errorHandler)
 
 
 // * mongodb connect and server starting point

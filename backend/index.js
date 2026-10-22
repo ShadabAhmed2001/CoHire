@@ -1,16 +1,9 @@
 import "dotenv/config"
 import express from "express"
 import mongoose from "mongoose"
-import bcrypt from "bcryptjs"
-import jwt from "jsonwebtoken"
 import cookieParser from "cookie-parser"
-import { z } from "zod"
-import ClsHttpError from "./handlers/ClsHttpError.js";
-import User from "./models/User.js";
-import requireAuth from "./middlewares/requireAuth.js";
-import errorHandler from "./middlewares/errorHandler.js";
-
-
+import errorHandler from "./middlewares/errorHandler.middleware.js";
+import authRouter from "./routes/auth.route.js"
 
 let app = express()
 
@@ -24,119 +17,8 @@ app.get("/api/health", (req, res) => {
   res.send("server started")
 })
 
+app.use("/api",authRouter)
 
-
-let registerSchema = z.object({
-  name: z.string("Name is required").min(1, "Name is required"),
-  email: z.email("Enter a valid email"),
-  password: z.string("Password is required").min(6, "Password must be at least 6 characters")
-})
-
-
-
-
-
-// ^ register user
-app.post("/api/register", async (req, res) => {
-
-  let validate = registerSchema.safeParse(req.body)
-
-  if (!validate.success) {
-    // res.status(400).send({ message: "Invalid input" })
-    // return false
-
-    // console.log(validate.error.issues)
-    // throw new ClsHttpError(400, "Invalid input!")
-    throw new ClsHttpError(400, validate.error.issues[0].message)
-  }
-
-  let { name, email, password } = validate.data
-  let hashedPassowrd = await bcrypt.hash(password, 10)
-  let addedUser = await User.create({
-    name,
-    email,
-    passwordHash: hashedPassowrd
-  })
-  res.status(201).send({
-    _id: addedUser._id,
-    name: addedUser.name,
-    email: addedUser.email
-  })
-})
-
-
-// ^ get all users
-app.get("/api/users", requireAuth, async (req, res) => {
-  res.send(await User.find())
-})
-
-
-// ^ login
-app.post("/api/login", async (req, res) => {
-  let { email, password } = req.body
-  let user = await User.findOne({ email }).select("+passwordHash")
-
-  // if no user found with email
-  if (!user) {
-    // res.status(401).send({ message: "Invalid email or password" })
-    // return false
-    throw new ClsHttpError(401, "Invalid email or password")
-  }
-
-  // if user found but password doesnt match
-  let passwordMatch = await bcrypt.compare(password, user.passwordHash)
-  if (!passwordMatch) {
-    // res.status(401).send({ message: "Invalid email or password" })
-    // return false
-    throw new ClsHttpError(401, "Invalid email or password")
-  }
-
-  let token = jwt.sign({ userID: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" })
-
-  // res.cookie(token_name,value,options)
-  res.cookie(
-    "token",
-    token,
-    {
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000 //milliseconds
-    }
-  )
-
-  res.status(200).send({ message: "user logged in" })
-})
-
-
-// ^ logout
-app.post("/api/logout", (req, res) => {
-
-  res.clearCookie(
-    "token",
-    {
-      httpOnly: true,
-      sameSite: "lax"
-    }
-  )
-
-  res.status(200).send({ message: "User logged out" })
-
-})
-
-
-// ^ who's logged in
-app.get("/api/me", requireAuth, async (req, res) => {
-  let user = await User.findById(req.userID)
-  if (!user) {
-    throw new ClsHttpError(401, "User not found")
-  }
-
-  res.send({
-    _id: user._id,
-    name: user.name,
-    email: user.email
-  })
-})
 
 // ! error handling middleware.
 // instead of using try catch block in every route, one middlewear to handle all errors.
